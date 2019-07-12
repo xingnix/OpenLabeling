@@ -1,4 +1,13 @@
 #!/bin/python
+
+from imutils.video import VideoStream
+from imutils.video import FPS
+import argparse
+import imutils
+import time
+
+
+
 import argparse
 import glob
 import json
@@ -12,7 +21,7 @@ from tqdm import tqdm
 from lxml import etree
 import xml.etree.cElementTree as ET
 
-from dasiamrpn import dasiamrpn
+#from dasiamrpn import dasiamrpn
 
 DELAY = 20 # keyboard delay (in milliseconds)
 WITH_QT = False
@@ -23,6 +32,7 @@ try:
 except cv2.error:
     print('-> Please ignore this error message\n')
 cv2.destroyAllWindows()
+#cv2.destroyWindow('Test')
 
 
 parser = argparse.ArgumentParser(description='Open-source image labeling tool')
@@ -51,13 +61,14 @@ annotation_formats = {'PASCAL_VOC' : '.xml', 'YOLO_darknet' : '.txt'}
 TRACKER_DIR = os.path.join(OUTPUT_DIR, '.tracker')
 
 # selected bounding box
-prev_was_double_click = False
+#prev_was_double_click = False
 is_bbox_selected = False
 selected_bbox = -1
 LINE_THICKNESS = args.thickness
 
 mouse_x = 0
 mouse_y = 0
+mode='draw'
 point_1 = (-1, -1)
 point_2 = (-1, -1)
 
@@ -90,7 +101,7 @@ class dragBBox:
     '''
 
     # Size of resizing anchors (depends on LINE_THICKNESS)
-    sRA = LINE_THICKNESS * 2
+    sRA = LINE_THICKNESS * 2 
 
     # Object being dragged
     selected_object = None
@@ -338,7 +349,8 @@ def draw_bbox_anchors(tmp_img, xmin, ymin, xmax, ymax, color):
     anchor_dict = get_anchors_rectangles(xmin, ymin, xmax, ymax)
     for anchor_key in anchor_dict:
         x1, y1, x2, y2 = anchor_dict[anchor_key]
-        cv2.rectangle(tmp_img, (int(x1), int(y1)), (int(x2), int(y2)), color, -1)
+        cv2.rectangle(tmp_img, (int(x1), int(y1)), (int(x2), int(y2)), color, 1)
+        #cv2.circle(tmp_img, (int((x1+x2)/2),int((y1+y2)/2)), 1, color, 1)
     return tmp_img
 
 def draw_bboxes_from_file(tmp_img, annotation_paths, width, height):
@@ -358,7 +370,7 @@ def draw_bboxes_from_file(tmp_img, annotation_paths, width, height):
             # draw resizing anchors
             tmp_img = draw_bbox_anchors(tmp_img, xmin, ymin, xmax, ymax, color)
             font = cv2.FONT_HERSHEY_SIMPLEX
-            cv2.putText(tmp_img, class_name, (xmin, ymin - 5), font, 0.6, color, LINE_THICKNESS, cv2.LINE_AA)
+            cv2.putText(tmp_img, class_name, (xmin, ymin - 5), font, 0.3, color, LINE_THICKNESS, cv2.LINE_AA)
     return tmp_img
 
 
@@ -530,19 +542,43 @@ def edit_bbox(obj_to_edit, action):
 
 
 def mouse_listener(event, x, y, flags, param):
+    print('event',event)
     # mouse callback function
-    global is_bbox_selected, prev_was_double_click, mouse_x, mouse_y, point_1, point_2
+    #global is_bbox_selected, prev_was_double_click, mouse_x, mouse_y, point_1, point_2 , mode
+    global is_bbox_selected,  mouse_x, mouse_y, point_1, point_2 , mode
 
     if event == cv2.EVENT_MOUSEMOVE:
+        old_mouse_x=mouse_x
+        old_mouse_y=mouse_y
         mouse_x = x
         mouse_y = y
-    elif event == cv2.EVENT_LBUTTONDBLCLK:
-        prev_was_double_click = True
-        #print('Double click')
-        point_1 = (-1, -1)
-        # if clicked inside a bounding box we set that bbox
-        set_class = True
-        set_selected_bbox(set_class)
+        if flags==cv2.EVENT_FLAG_CTRLKEY or mode=='move':
+            class_name, x_left, y_top, x_right, y_bottom = img_objects[selected_bbox]
+            x_left+=x-old_mouse_x
+            x_right+=x-old_mouse_x
+            y_top+=y-old_mouse_y
+            y_bottom+=y-old_mouse_y
+            #dx=x_right-x_left
+            #dy=y_top-y_bottom
+            #x_left=x-int(dx/2)
+            #x_right=x_left+dx             
+            #y_top=y+int(dy/2)
+            #y_bottom=y_top-dy
+            action = "resize_bbox:{}:{}:{}:{}".format(x_left, y_top, x_right, y_bottom)
+            edit_bbox(img_objects[selected_bbox], action)
+            # update the selected bbox
+            dragBBox.selected_object = [class_name, x_left, y_top, x_right, y_bottom]
+            #dragBBox.handler_left_mouse_down(x, y, img_objects)
+        else:
+            set_class = True
+            set_selected_bbox(set_class)
+    #elif event == cv2.EVENT_LBUTTONDBLCLK:
+    #    #prev_was_double_click = True
+    #    #print('Double click')
+    #    point_1 = (-1, -1)
+    #    # if clicked inside a bounding box we set that bbox
+    #    set_class = True
+    #    set_selected_bbox(set_class)
     # By AlexeyGy: delete via right-click
     elif event == cv2.EVENT_RBUTTONDOWN:
         set_class = False
@@ -552,9 +588,9 @@ def mouse_listener(event, x, y, flags, param):
             edit_bbox(obj_to_edit, 'delete')
             is_bbox_selected = False
     elif event == cv2.EVENT_LBUTTONDOWN:
-        if prev_was_double_click:
-            #print('Finish double click')
-            prev_was_double_click = False
+        #if prev_was_double_click:
+        #    #print('Finish double click')
+        #    prev_was_double_click = False
 
         #print('Normal left click')
 
@@ -565,10 +601,12 @@ def mouse_listener(event, x, y, flags, param):
             if point_1[0] is -1:
                 if is_bbox_selected:
                     if is_mouse_inside_delete_button():
+                        set_class = True
                         set_selected_bbox(set_class)
                         obj_to_edit = img_objects[selected_bbox]
                         edit_bbox(obj_to_edit, 'delete')
-                    is_bbox_selected = False
+                    else:
+                        mode='move'
                 else:
                     # first click (start drawing a bounding box or delete an item)
                     point_1 = (x, y)
@@ -582,24 +620,23 @@ def mouse_listener(event, x, y, flags, param):
     elif event == cv2.EVENT_LBUTTONUP:
         if dragBBox.anchor_being_dragged is not None:
             dragBBox.handler_left_mouse_up(x, y)
-
+        else:
+            mode='draw'
+            is_bbox_selected = False
 
 
 def get_close_icon(x1, y1, x2, y2):
     percentage = 0.05
-    height = -1
-    while height < 15 and percentage < 1.0:
-        height = int((y2 - y1) * percentage)
-        percentage += 0.1
+    height =min([15, int((y2-y1)*0.5) ,int((x2-x1)*0.5)])
     return (x2 - height), y1, x2, (y1 + height)
 
 
 def draw_close_icon(tmp_img, x1_c, y1_c, x2_c, y2_c):
     red = (0,0,255)
-    cv2.rectangle(tmp_img, (x1_c + 1, y1_c - 1), (x2_c, y2_c), red, -1)
+    cv2.rectangle(tmp_img, (x1_c + 1, y1_c - 1), (x2_c, y2_c), red, 1)
     white = (255, 255, 255)
-    cv2.line(tmp_img, (x1_c, y1_c), (x2_c, y2_c), white, 2)
-    cv2.line(tmp_img, (x1_c, y2_c), (x2_c, y1_c), white, 2)
+    cv2.line(tmp_img, (x1_c, y1_c), (x2_c, y2_c), white, 1)
+    cv2.line(tmp_img, (x1_c, y2_c), (x2_c, y1_c), white, 1)
     return tmp_img
 
 
@@ -765,7 +802,7 @@ def get_json_file_object_list(img_path, frame_data_dict):
 def json_file_add_object(frame_data_dict, img_path, anchor_id, pred_counter, obj):
     object_list = get_json_file_object_list(img_path, frame_data_dict)
     class_index, xmin, ymin, xmax, ymax = obj
-
+    
     bbox = {
       'xmin': xmin,
       'ymin': ymin,
@@ -784,6 +821,49 @@ def json_file_add_object(frame_data_dict, img_path, anchor_id, pred_counter, obj
     frame_data_dict[img_path] = object_list
 
     return frame_data_dict
+
+def IOU_duplicate(obj,frame_path,annotation_formats):
+    annotation_paths = get_annotation_paths(frame_path, annotation_formats)
+    ann_path = next(path for path in annotation_paths if 'PASCAL_VOC' in path)
+    if os.path.isfile(ann_path):
+        tree = ET.parse(ann_path)
+        annotation = tree.getroot()
+        for obj_annotation in annotation.findall('object'):
+            #class_name, class_index, xmin, ymin, xmax, ymax = get_xml_object_data(obj)
+            obj_frame = get_xml_object_data(obj_annotation)
+            if IOU(obj,obj_frame)>0.1:
+                return True
+    return False
+ 
+def IOU(obj1,obj2):
+    class_index1, xmin1, ymin1, xmax1, ymax1 = obj1
+    class_name,class_index2, xmin2, ymin2, xmax2, ymax2 = obj2
+    x1 = xmin1
+    y1 = ymin1
+    width1 = xmax1-xmin1
+    height1 = ymax1-ymin1
+    x2 = xmin2
+    y2 = ymin2
+    width2 = xmax2-xmin2
+    height2 = ymax2-ymin2
+  
+  
+    endx = max(x1+width1,x2+width2)
+    startx = min(x1,x2)
+    width = width1+width2-(endx-startx)
+  
+    endy = max(y1+height1,y2+height2)
+    starty = min(y1,y2)
+    height = height1+height2-(endy-starty)
+  
+    if width <=0 or height <= 0:
+        ratio = 0
+    else:
+        Area = width*height
+        Area1 = width1*height1
+        Area2 = width2*height2
+        ratio = Area*1./(Area1+Area2-Area)
+    return ratio
 
 
 class LabelTracker():
@@ -870,6 +950,10 @@ class LabelTracker():
                 xmax = xmin + w
                 ymax = ymin + h
                 obj = [class_index, xmin, ymin, xmax, ymax]
+                # avoid duplicates
+                if IOU_duplicate(obj,frame_path,annotation_formats):
+                    return
+
                 frame_data_dict = json_file_add_object(frame_data_dict, frame_path, anchor_id, pred_counter, obj)
                 cv2.rectangle(next_image, (xmin, ymin), (xmax, ymax), color, LINE_THICKNESS)
                 # save prediction
@@ -1005,13 +1089,14 @@ if __name__ == '__main__':
         if edges_on == True:
             # draw edges
             tmp_img = draw_edges(tmp_img)
-        # draw vertical and horizontal guide lines
-        draw_line(tmp_img, mouse_x, mouse_y, height, width, color)
+        if not is_bbox_selected:
+            # draw vertical and horizontal guide lines
+            draw_line(tmp_img, mouse_x, mouse_y, height, width, color)
         # write selected class
         class_name = CLASS_LIST[class_index]
         font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.6
-        margin = 3
+        font_scale = 0.3
+        margin = 2
         text_width, text_height = cv2.getTextSize(class_name, font, font_scale, LINE_THICKNESS)[0]
         tmp_img = cv2.rectangle(tmp_img, (mouse_x + LINE_THICKNESS, mouse_y - LINE_THICKNESS), (mouse_x + text_width + margin, mouse_y - text_height - margin), complement_bgr(color), -1)
         tmp_img = cv2.putText(tmp_img, class_name, (mouse_x + margin, mouse_y - margin), font, font_scale, color, LINE_THICKNESS, cv2.LINE_AA)
@@ -1064,8 +1149,34 @@ if __name__ == '__main__':
                 if is_bbox_selected:
                     obj_to_edit = img_objects[selected_bbox]
                     edit_bbox(obj_to_edit, 'change_class:{}'.format(class_index))
+            elif pressed_key == ord('h') or pressed_key==ord('j') or pressed_key==ord('k') or pressed_key==ord('l'):
+                if is_bbox_selected:
+                    class_name, x_left, y_top, x_right, y_bottom = img_objects[selected_bbox]
+                    delta=1
+                    change_was_made=False
+                    if  pressed_key==ord('h'):
+                        #x_left-=1
+                        x_right-=1                    
+                        change_was_made=True
+                    if  pressed_key==ord('j'):
+                        #y_top+=1
+                        y_bottom+=1                    
+                        change_was_made=True
+                    if  pressed_key==ord('k'):
+                        #y_top-=1
+                        y_bottom-=1                    
+                        change_was_made=True
+                    if  pressed_key==ord('l'):
+                        #x_left+=1
+                        x_right+=1                    
+                        change_was_made=True
+                    if change_was_made:
+                        action = "resize_bbox:{}:{}:{}:{}".format(x_left, y_top, x_right, y_bottom)
+                        edit_bbox(img_objects[selected_bbox], action)
+                        # update the selected bbox
+                        dragBBox.selected_object = [class_name, x_left, y_top, x_right, y_bottom]
             # help key listener
-            elif pressed_key == ord('h'):
+            elif pressed_key == ord('?'):
                 text = ('[e] to show edges;\n'
                         '[q] to quit;\n'
                         '[a] or [d] to change Image;\n'
@@ -1089,18 +1200,21 @@ if __name__ == '__main__':
                     # remove the objects in that frame that are already in the `.json` file
                     json_file_path = '{}.json'.format(os.path.join(TRACKER_DIR, video_name))
                     file_exists, json_file_data = get_json_file_data(json_file_path)
-                    if file_exists:
-                        object_list = remove_already_tracked_objects(object_list, img_path, json_file_data)
+                    #if file_exists:
+                    #    object_list = remove_already_tracked_objects(object_list, img_path, json_file_data)
                     if len(object_list) > 0:
                         # get list of frames following this image
                         next_frame_path_list = get_next_frame_path_list(video_name, img_path)
                         # initial frame
                         init_frame = img.copy()
-                        label_tracker = LabelTracker(TRACKER_TYPE, init_frame, next_frame_path_list)
+                        label_tracker = LabelTracker(TRACKER_TYPE, init_frame, next_frame_path_list[:min(1,len(next_frame_path_list))])
                         for obj in object_list:
                             class_index = obj[0]
                             color = class_rgb[class_index].tolist()
                             label_tracker.start_tracker(json_file_data, json_file_path, img_path, obj, color, annotation_formats)
+                        img_index = increase_index(img_index, last_img_index)
+                        set_img_index(img_index)
+                        cv2.setTrackbarPos(TRACKBAR_IMG, WINDOW_NAME, img_index)
             # quit key listener
             elif pressed_key == ord('q'):
                 break
@@ -1112,3 +1226,4 @@ if __name__ == '__main__':
                 break
 
     cv2.destroyAllWindows()
+    #cv2.destroyWindow(WINDOW_NAME)
