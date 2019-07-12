@@ -542,7 +542,6 @@ def edit_bbox(obj_to_edit, action):
 
 
 def mouse_listener(event, x, y, flags, param):
-    print('event',event)
     # mouse callback function
     #global is_bbox_selected, prev_was_double_click, mouse_x, mouse_y, point_1, point_2 , mode
     global is_bbox_selected,  mouse_x, mouse_y, point_1, point_2 , mode
